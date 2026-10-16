@@ -1,0 +1,38 @@
+name: Release to RubyGems
+
+# Runs when a version tag (v0.2.0, ...) reaches this repository. The monorepo
+# pushes it with `scripts/split-to-github.sh v<version>`.
+#
+# Trusted publishing: RubyGems trusts THIS workflow file in THIS repository
+# (set on rubygems.org > sendclipper > Trusted publishers), so no API key is
+# stored anywhere. Renaming this file breaks publishing until RubyGems is
+# updated too.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+      - name: Tag matches the gem version
+        run: |
+          version="v$(ruby -Ilib -e 'require "sendclipper/version"; print SendClipper::VERSION')"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match SendClipper::VERSION $version" >&2
+            exit 1
+          fi
+      - run: bundle exec rake test
+      - run: gem build sendclipper.gemspec
+      - uses: rubygems/configure-rubygems-credentials@v2.1.0
+      - run: gem push sendclipper-*.gem
