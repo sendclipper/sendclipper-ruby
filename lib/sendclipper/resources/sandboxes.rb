@@ -38,10 +38,11 @@ module SendClipper
       def reset_credentials(id, **options) = api_post("/sandboxes/#{seg(id)}/credentials", nil, options: options)
 
       # Send to a sandbox through its JSON door, with the sandbox's own
-      # +sc_sbx_...+ token. Same fields as emails.send; nothing is delivered.
+      # +sc_sbx_...+ token. Same fields as emails.send (reply_to and attachments
+      # included); nothing is delivered.
       def send(sandbox_token, params = nil, **kw)
         body, options = split(params, kw)
-        api_post("/sandbox/emails", body, options: options, bearer: sandbox_token)
+        api_post("/sandbox/emails", email_fields(body), options: options, bearer: sandbox_token)
       end
     end
 

@@ -43,6 +43,23 @@ Fields are keyword arguments (or a Hash). Top-level names may be snake_case (`te
 
 `from` must be a bare address on a domain you verified in SendClipper. Each message has one recipient in `to`; for several, use `batch.send`.
 
+## Reply-To and attachments
+
+```ruby
+data, error = client.emails.send(
+  from: "bookings@acme.io",
+  to: "ada@lumen.io",
+  subject: "Your booking",
+  html: "<p>Your confirmation is attached.</p>",
+  reply_to: "support@acme.io",
+  attachments: [
+    { filename: "booking-42.pdf", content: File.binread("booking-42.pdf") }
+  ]
+)
+```
+
+`reply_to:` is one address or a list of up to 10. `content:` is the file's raw bytes (read it with `File.binread`) and the SDK base64-encodes it; if you already hold base64, pass `content_base64:` instead and it is sent as it is. `content_type:` is guessed from the filename when you leave it out. Limits: 10 MiB per file, 25 MiB of files per message, and your sending provider's own. Attachments are not accepted on a batch item (it fails with `attachments_not_batchable`); send those emails on their own. `sandboxes.send` takes the same fields.
+
 ## Send with a template
 
 Design and publish a template in the dashboard, then send it by id or by its send name:

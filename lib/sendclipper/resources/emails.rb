@@ -10,9 +10,14 @@ module SendClipper
       #
       # Every call carries an Idempotency-Key, so the SDK's own retries never
       # send twice. Pass +idempotency_key:+ to make YOUR retries safe too.
+      #
+      # +reply_to:+ is one address or a list of up to 10. +attachments:+ is a
+      # list of { filename:, content:, content_type: }, where +content:+ is the
+      # file's raw bytes (File.binread("invoice.pdf")) and the SDK base64-encodes
+      # it; pass +content_base64:+ instead when you already hold base64.
       def send(params = nil, **kw)
         body, options = split(params, kw)
-        api_post("/emails", body, options: options)
+        api_post("/emails", email_fields(body), options: options)
       end
 
       # Same as client.batch.send.
@@ -50,11 +55,14 @@ module SendClipper
     class Batch < Base
       # Up to 500 messages in one request (one recipient each). Every item is
       # accepted or refused on its own; a refused item costs its siblings nothing.
+      # An item takes +reply_to:+; an item with +attachments:+ is refused
+      # (+attachments_not_batchable+), so send those messages on their own.
       def send(emails, **options) = self.class.post(@http, emails, options)
 
       # @api private
       def self.post(http, emails, options)
-        items = emails.map { |e| new(http).__send__(:camelize, e.to_h) }
+        fields = new(http)
+        items = emails.map { |e| fields.__send__(:email_fields, e.to_h) }
         http.call("POST", "/emails/batch", body: { "emails" => items }, options: options)
       end
     end

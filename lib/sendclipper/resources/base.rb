@@ -29,7 +29,43 @@ module SendClipper
         fields.each_with_object({}) do |(k, v), out|
           next if v.nil?
 
-          out[k.to_s.gsub(/_([a-z0-9])/) { Regexp.last_match(1).upcase }] = v
+          out[camel(k)] = v
+        end
+      end
+
+      def camel(key) = key.to_s.gsub(/_([a-z0-9])/) { Regexp.last_match(1).upcase }
+
+      # The fields of one message (emails.send, sandboxes.send, a batch item):
+      # camelized, with each attachment's +content:+ (the file's raw bytes)
+      # base64-encoded. +content_base64:+ is content that is already base64,
+      # sent as it is.
+      def email_fields(fields)
+        out = camelize(fields)
+        list = out["attachments"]
+        out["attachments"] = list.map { |a| attachment_field(a) } if list.is_a?(Array)
+        out
+      end
+
+      def attachment_field(attachment)
+        given = attachment.to_h
+        names = given.reject { |_, v| v.nil? }.keys.map(&:to_s)
+        if names.include?("content") && (names & %w[content_base64 contentBase64]).any?
+          raise ArgumentError, "An attachment takes content: (the file's bytes) or content_base64:, not both"
+        end
+
+        given.each_with_object({}) do |(k, v), out|
+          next if v.nil?
+
+          case k.to_s
+          when "content"
+            unless v.is_a?(String)
+              raise ArgumentError, "An attachment's content: must be a String of the file's bytes, e.g. File.binread(path)"
+            end
+
+            out["content"] = [v].pack("m0")
+          when "content_base64", "contentBase64" then out["content"] = v
+          else out[camel(k)] = v
+          end
         end
       end
 

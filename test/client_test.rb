@@ -241,6 +241,47 @@ class ClientTest < Minitest::Test
     assert_equal "Bearer sc_sbx_abc", t.calls.first.headers["Authorization"]
   end
 
+  PDF = "%PDF-1.4\n\xFF\x00\xE2\x80".b.freeze
+
+  def test_send_with_reply_to_and_attachments_encodes_raw_bytes_and_passes_base64_through
+    c, t, = client([json(201, SENT)])
+    c.emails.send(**MSG, reply_to: ["support@acme.io", "billing@acme.io"],
+                         attachments: [{ filename: "booking-42.pdf", content: PDF, content_type: "application/pdf" },
+                                       { filename: "notes.txt", content_base64: "aGVsbG8=" }])
+    assert_equal '{"from":"a@acme.io","to":"b@lumen.io","subject":"s","html":"h",' \
+                 '"replyTo":["support@acme.io","billing@acme.io"],' \
+                 '"attachments":[{"filename":"booking-42.pdf","content":"JVBERi0xLjQK/wDigA==","contentType":"application/pdf"},' \
+                 '{"filename":"notes.txt","content":"aGVsbG8="}]}', t.calls.first.body
+    assert_equal PDF, body(t.calls.first)["attachments"][0]["content"].unpack1("m0")
+  end
+
+  def test_sandboxes_send_takes_reply_to_and_attachments_too
+    c, t, = client([json(201, { "id" => "sbx-msg" })])
+    c.sandboxes.send("sc_sbx_abc", { "from" => "a@acme.io", "to" => "b@lumen.io", "subject" => "s", "html" => "h",
+                                     "replyTo" => "support@acme.io",
+                                     "attachments" => [{ "filename" => "a.bin", "content" => "\x00\x01".b,
+                                                         "contentType" => "application/octet-stream" }] })
+    assert_equal "/v1/sandbox/emails", path(t.calls.first)
+    assert_equal '{"from":"a@acme.io","to":"b@lumen.io","subject":"s","html":"h","replyTo":"support@acme.io",' \
+                 '"attachments":[{"filename":"a.bin","content":"AAE=","contentType":"application/octet-stream"}]}', t.calls.first.body
+  end
+
+  def test_a_batch_item_takes_reply_to_and_its_attachments_are_encoded_like_a_single_send
+    c, t, = client([json(200, { "data" => [], "summary" => {} })])
+    c.batch.send([MSG.merge(reply_to: "support@acme.io", attachments: [{ filename: "a.txt", content: "hi" }])])
+    assert_equal({ "emails" => [{ "from" => "a@acme.io", "to" => "b@lumen.io", "subject" => "s", "html" => "h",
+                                  "replyTo" => "support@acme.io",
+                                  "attachments" => [{ "filename" => "a.txt", "content" => "aGk=" }] }] }, body(t.calls.first))
+  end
+
+  def test_an_attachment_with_both_contents_or_non_string_bytes_is_refused_before_any_request
+    c, t, = client([])
+    assert_raises(ArgumentError) { c.emails.send(**MSG, attachments: [{ filename: "a", content: "x", content_base64: "eA==" }]) }
+    err = assert_raises(ArgumentError) { c.emails.send(**MSG, attachments: [{ filename: "a", content: [1, 2] }]) }
+    assert_match(/File\.binread/, err.message)
+    assert_empty t.calls
+  end
+
   def test_contacts_import_is_multipart_carries_no_idempotency_key_and_is_never_retried
     c, t, = client([json(503, { "error" => { "code" => "unavailable", "message" => "down" } })])
     _, error = c.contacts.import(file: "name,email\nAda,ada@lumen.io\n", filename: "contacts.csv", on_duplicate: "update")
